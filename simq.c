@@ -1,3 +1,56 @@
+/************************************************************************/
+/**
+
+   Program:    simq
+   \file       simq.c
+   
+   \version    V1.0 
+   \date       16.10.15   
+   \brief      A very simple batch queuing program
+   
+   \copyright  (c) UCL / Dr. Andrew C. R. Martin 2015
+   \author     Dr. Andrew C. R. Martin
+   \par
+               Institute of Structural & Molecular Biology,
+               University College,
+               Gower Street,
+               London.
+               WC1E 6BT.
+   \par
+               andrew@bioinf.org.uk
+               andrew.martin@ucl.ac.uk
+               
+**************************************************************************
+
+   This program is not in the public domain, but it may be copied
+   according to the conditions laid out in the accompanying file
+   COPYING.DOC
+
+   The code may be modified as required, but any modifications must be
+   documented so that the person responsible can be identified.
+
+   The code may not be sold commercially or included as part of a 
+   commercial product except as described in the file COPYING.DOC.
+
+**************************************************************************
+
+   Description:
+   ============
+
+**************************************************************************
+
+   Usage:
+   ======
+
+**************************************************************************
+
+   Revision History:
+   =================
+-  V1.0    16.10.15  Original   By: ACRM
+
+*************************************************************************/
+/* Includes
+*/
 #include <stdio.h>
 #include <stdlib.h>
 #include <unistd.h>
@@ -7,10 +60,10 @@
 #include <sys/stat.h>
 #include <sys/types.h>
 #include <pwd.h>
-#include "bioplib/macros.h"
-#include "bioplib/SysDefs.h"
 
-
+/************************************************************************/
+/* Defines and macros
+*/
 #define PROGNAME "simq"
 #define MAXBUFF 240
 #define LOCKFILE ".lock"
@@ -23,13 +76,38 @@
 #define DEF_POLLTIME 10
 #define DEF_WAITTIME 60
 
+typedef short BOOL;
+#ifndef TRUE
+#define TRUE 1
+#endif
+#ifndef FALSE
+#define FALSE 0
+#endif
+
 #define CLOSE_AND_RETURN(fp, pid)                              \
    { fprintf(stderr,"Warning: Invalid job file (%d)\n", pid);  \
      fclose(fp);                                               \
      return;                                                   \
    }                                                           \
+
+/* From bioplib/macros.h */
+#define TERMINATE(x) do {  int _terminate_macro_j;              \
+                        for(_terminate_macro_j=0;               \
+                            (x)[_terminate_macro_j];            \
+                            _terminate_macro_j++)               \
+                        {  if((x)[_terminate_macro_j] == '\n')  \
+                           {  (x)[_terminate_macro_j] = '\0';   \
+                              break;                            \
+                     }  }  }  while(0)
       
 
+/************************************************************************/
+/* Globals
+*/
+
+/************************************************************************/
+/* Prototypes
+*/
 
 BOOL ParseCmdLine(int argc, char **argv, BOOL *run, int *progArg, int *sleepTime, int *verbose, char *queueDir, int *maxWait);
 int main(int argc, char **argv);
@@ -47,12 +125,7 @@ BOOL FileExists(char *filename);
 BOOL IsRootUser(uid_t *uid, gid_t *gid);
 void Message(char *progname, int level, char *message);
 
-
-
-
-
-
-
+/************************************************************************/
 int main(int argc, char **argv)
 {
     BOOL run = FALSE;
@@ -104,6 +177,7 @@ int main(int argc, char **argv)
     return(0);
 }
 
+/************************************************************************/
 BOOL ParseCmdLine(int argc, char **argv, BOOL *run, int *progArg, int *sleepTime, int *verbose, char *queueDir, int *maxWait)
 {
     argc--;
@@ -165,6 +239,7 @@ BOOL ParseCmdLine(int argc, char **argv, BOOL *run, int *progArg, int *sleepTime
 }
 
 
+/************************************************************************/
 void MakeDirectory(char *dirname)
 {
    mode_t mode = 0777;
@@ -174,7 +249,7 @@ void MakeDirectory(char *dirname)
 
 
 
-/***************************************************************************/
+/************************************************************************/
 int QueueJob(char *queueDir, char *lockFullFile, char **progArgs, int nProgArgs, int maxWait)
 {
    int pid = 1;                /* Default PID */
@@ -215,7 +290,7 @@ int QueueJob(char *queueDir, char *lockFullFile, char **progArgs, int nProgArgs,
    return(nJobs+1);
 }
 
-/************************************************************************** */
+/************************************************************************/
 void SpawnJobRunner(char *queueDir, int sleepTime, int verbose)
 {
    while(1)
@@ -227,7 +302,7 @@ void SpawnJobRunner(char *queueDir, int sleepTime, int verbose)
    }
 }
 
-/************************************************************************** */
+/************************************************************************/
 BOOL RunNextJob(char *queueDir, int verbose)
 {
    BOOL retVal = FALSE;
@@ -250,7 +325,7 @@ BOOL RunNextJob(char *queueDir, int verbose)
    return(retVal);
 }
 
-/***************************************************************************/
+/************************************************************************/
 void RunJob(char *queueDir, int pid, int verbose)
 {
    char jobFile[MAXBUFF];
@@ -314,7 +389,7 @@ void RunJob(char *queueDir, int pid, int verbose)
 
 
 
-/************************************************************************** */
+/************************************************************************/
 int FindJobs(char *queueDir, int oldNew, int *pid)
 {
    struct dirent *dirp;
@@ -383,7 +458,7 @@ int FindJobs(char *queueDir, int oldNew, int *pid)
 }
 
 
-/************************************************************************** */
+/************************************************************************/
 int FlockFile(char *filename)
 {
    int fh = 0;
@@ -399,14 +474,14 @@ int FlockFile(char *filename)
    return(-1);
 }
 
-/************************************************************************** */
+/************************************************************************/
 void FunlockFile(int fh, char *lockFileFull)
 {
     close(fh);
     unlink(lockFileFull);
 }
 
-/************************************************************************** */
+/************************************************************************/
 void WriteJobFile(char *queueDir, int pid, char **progArgs, int nProgArgs)
 
 {
@@ -436,6 +511,7 @@ void WriteJobFile(char *queueDir, int pid, char **progArgs, int nProgArgs)
    }
 }
 
+/************************************************************************/
 BOOL FileExists(char *filename)
 {
    if(access(filename, F_OK) != 0)
@@ -444,6 +520,7 @@ BOOL FileExists(char *filename)
 
 }
 
+/************************************************************************/
 BOOL IsRootUser(uid_t *uid, gid_t *gid)
 {
    *uid = getuid();
@@ -456,6 +533,7 @@ BOOL IsRootUser(uid_t *uid, gid_t *gid)
    return(FALSE);
 }
 
+/************************************************************************/
 void Message(char *progname, int level, char *message)
 {
    switch(level)
@@ -476,6 +554,9 @@ void Message(char *progname, int level, char *message)
    if(level == MSG_FATAL)
       exit(1);
 }
+
+
+/************************************************************************/
 void UsageDie(void)
 {
    fprintf(stderr,"%s V1.0 (c) 2015 UCL, Dr. Andrew C.R. Martin\n", PROGNAME);
