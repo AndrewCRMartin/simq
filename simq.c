@@ -110,9 +110,9 @@ typedef short BOOL;
 /************************************************************************/
 /* Prototypes
 */
-BOOL ParseCmdLine(int argc, char **argv, BOOL *run, int *progArg, 
+BOOL ParseCmdLine(int argc, char **argv, BOOL *runDaemon, int *progArg, 
                   int *sleepTime, int *verbose, char *queueDir,
-                  int *maxWait);
+                  int *maxWait, BOOL *listJobs);
 int main(int argc, char **argv);
 void MakeDirectory(char *dirname);
 void UsageDie(void);
@@ -129,6 +129,7 @@ void WriteJobFile(char *queueDir, int jobID, char **progArgs,
 BOOL FileExists(char *filename);
 BOOL IsRootUser(uid_t *uid, gid_t *gid);
 void Message(char *progname, int level, char *message);
+void ListJobs(char *queueDir, int verbose);
 
 
 /************************************************************************/
@@ -137,92 +138,97 @@ void Message(char *progname, int level, char *message);
 *//**
    Main program
 
-   -16.10.15   Original   By: ACRM
+   - 16.10.15   Original   By: ACRM
 */
 int main(int argc, char **argv)
 {
-    BOOL run = FALSE;
-    int  progArg   = (-1),
+   BOOL  runDaemon = FALSE, 
+         listJobs  = FALSE;
+   int   progArg   = (-1),
          verbose   = 0,
          sleepTime = DEF_POLLTIME,
          maxWait   = DEF_WAITTIME;
-    char queueDir[MAXBUFF];
-    uid_t uid;
-    gid_t gid;
+   char  queueDir[MAXBUFF];
+   uid_t uid;
+   gid_t gid;
     
-
-    if(ParseCmdLine(argc, argv, &run, &progArg, &sleepTime, &verbose, 
-                    queueDir, &maxWait))
-    {
-       char lockFullFile[MAXBUFF];
-                                  
-       sprintf(lockFullFile, "%s/%s", queueDir, LOCKFILE);
-       MakeDirectory(queueDir);
-
-       if(run)
-       {
-          if(!IsRootUser(&uid, &gid))
-          {
-             Message(PROGNAME, MSG_FATAL, 
-                     "With -run, the program must be run as root.");
-          }
-          unlink(lockFullFile);
-          SpawnJobRunner(queueDir, sleepTime, verbose);
-       }
-       else
-       {
-          int nJobs;
-          if(IsRootUser(&uid, &gid))
-          {
-             Message(PROGNAME, MSG_FATAL,
-                     "Jobs may not be submitted by root");
-          }
-          
-          nJobs = QueueJob(queueDir, lockFullFile, argv+progArg, 
-                           argc-progArg, maxWait);
-          if(verbose)
-          {
-             char msg[MAXBUFF];
-             sprintf(msg, "There are now %d jobs in the queue", nJobs);
-             Message(PROGNAME, MSG_INFO, msg);
-          }
-       }
-    }
-    else
-    {
-        UsageDie();
-    }
-    return(0);
+   if(ParseCmdLine(argc, argv, &runDaemon, &progArg, &sleepTime, 
+                   &verbose, queueDir, &maxWait, &listJobs))
+   {
+      char lockFullFile[MAXBUFF];
+      
+      sprintf(lockFullFile, "%s/%s", queueDir, LOCKFILE);
+      MakeDirectory(queueDir);
+      
+      if(runDaemon)
+      {
+         if(!IsRootUser(&uid, &gid))
+         {
+            Message(PROGNAME, MSG_FATAL, 
+                    "With -run, the program must be run as root.");
+         }
+         unlink(lockFullFile);
+         SpawnJobRunner(queueDir, sleepTime, verbose);
+      }
+      else if (listJobs)
+      {
+         ListJobs(queueDir, verbose);
+      }
+      else
+      {
+         int nJobs;
+         if(IsRootUser(&uid, &gid))
+         {
+            Message(PROGNAME, MSG_FATAL,
+                    "Jobs may not be submitted by root");
+         }
+         
+         nJobs = QueueJob(queueDir, lockFullFile, argv+progArg, 
+                          argc-progArg, maxWait);
+         if(verbose)
+         {
+            char msg[MAXBUFF];
+            sprintf(msg, "There are now %d jobs in the queue", nJobs);
+            Message(PROGNAME, MSG_INFO, msg);
+         }
+      }
+   }
+   else
+   {
+      UsageDie();
+   }
+   return(0);
 }
 
 /************************************************************************/
-/*>BOOL ParseCmdLine(int argc, char **argv, BOOL *run, int *progArg, 
-                  int *sleepTime, int *verbose, char *queueDir, 
-                  int *maxWait)
+/*>BOOL ParseCmdLine(int argc, char **argv, BOOL *runDaemon, int *progArg,
+                     int *sleepTime, int *verbose, char *queueDir, 
+                     int *maxWait, BOOL *listJobs)
    -----------------------------------------------------------------
 *//**
    \param[in]  argc          Argument count
    \param[in]  **argv        Argument array
-   \param[out] *run          Run mode specified
+   \param[out] *runDaemon    Run mode specified
    \param[out] *progArg      offset into argv of the program to run
    \param[out] *sleepTime    how long to wait between polls for jobs
    \param[out] *verbose      verbose information
    \param[out] *queueDir     the queue directory
    \param[out] *maxWait      maximum time to wait when submitting job
+   \param[out] *listJobs     List the waiting jobs
    \returns                  OK
 
    Parses the command line
 
 -  16.10.15  Original   By: ACRM
 */
-BOOL ParseCmdLine(int argc, char **argv, BOOL *run, int *progArg, 
+BOOL ParseCmdLine(int argc, char **argv, BOOL *runDaemon, int *progArg, 
                   int *sleepTime, int *verbose, char *queueDir, 
-                  int *maxWait)
+                  int *maxWait, BOOL *listJobs)
 {
     argc--;
     argv++;
 
-    *progArg = 1;
+    *progArg    = 1;
     queueDir[0] = '\0';
 
     while(argc && (argv[0][0] == '-'))
@@ -233,7 +239,10 @@ BOOL ParseCmdLine(int argc, char **argv, BOOL *run, int *progArg,
            return(FALSE);
            break;
         case 'r':
-           *run = TRUE;
+           *runDaemon = TRUE;
+           break;
+        case 'l':
+           *listJobs = TRUE;
            break;
         case 'p':
            argc--;
@@ -258,7 +267,7 @@ BOOL ParseCmdLine(int argc, char **argv, BOOL *run, int *progArg,
         (*progArg)++;
     }
     
-    if(*run)
+    if(*runDaemon || *listJobs)
     {
        if(argc != 1)
           return(FALSE);
@@ -273,6 +282,9 @@ BOOL ParseCmdLine(int argc, char **argv, BOOL *run, int *progArg,
     argc--;
     argv++;
     (*progArg)++;
+
+    if(queueDir[0] != '/')
+       return(FALSE);
 
     return(TRUE);
 }
@@ -752,6 +764,40 @@ void Message(char *progname, int level, char *message)
       exit(1);
 }
 
+/************************************************************************/
+void ListJobs(char *queueDir, int verbose)
+{
+   struct dirent *dirp;
+   DIR           *dp;
+   int           nJobs       = 0;
+
+   if((dp=opendir(queueDir)) == NULL)
+   {
+      char msg[MAXBUFF];
+      sprintf(msg, "Can't read directory: %s", queueDir);
+      Message(PROGNAME, MSG_FATAL, msg);
+   }
+
+   while((dirp = readdir(dp)) != NULL)
+   {
+      int thisJobID;
+      
+      /* Ignore files starting with a .                                 */
+      if(dirp->d_name[0] != '.')
+      {
+         /* Check it's a number                                         */
+         if(sscanf(dirp->d_name, "%d", &thisJobID))
+         {
+            nJobs++;
+         }
+      }
+   }
+   
+   closedir(dp);
+
+   printf("Jobs waiting: %d\n", nJobs);
+}
+
 
 /************************************************************************/
 /*>void UsageDie(void)
@@ -770,11 +816,13 @@ void UsageDie(void)
            PROGNAME);
    fprintf(stderr,"         %s [-v[v...]] [-w maxwait] queuedir program \
 [parameters ...]\n", PROGNAME);
+   fprintf(stderr,"         %s -l queuedir\n", PROGNAME);
    fprintf(stderr,"         -v   Verbose mode (-vv, -vvv more info)\n");
    fprintf(stderr,"         -p   Specify the wait in seconds between \
 polling for jobs [%d]\n",  DEF_POLLTIME);
    fprintf(stderr,"         -w   Specify maximum wait time when trying \
 to submit a job [%d]\n", DEF_WAITTIME);
+   fprintf(stderr,"         -l   List number of waiting jobs\n");
    fprintf(stderr,"         -run Run in daemon mode to wait for jobs\n");
    fprintf(stderr,"\n");
    fprintf(stderr,"%s is a simple program batch queueing system. It \
@@ -784,6 +832,8 @@ file that lives in\n");
    fprintf(stderr,"the 'queuedir' directory. The queue manager then \
 pulls jobs off one at\n");
    fprintf(stderr,"a time and runs them.\n");
+   fprintf(stderr,"\n");
+   fprintf(stderr,"Note that 'queuedir' must be a full path name.\n");
    fprintf(stderr,"\n");
    fprintf(stderr,"It should be run first and backgrounded with the \
 -run flag. e.g.\n");
