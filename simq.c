@@ -131,6 +131,8 @@ BOOL IsRootUser(uid_t *uid, gid_t *gid);
 void Message(char *progname, int level, char *message);
 void ListJobs(char *queueDir, int verbose);
 void CountdownJob(char *queueDir, int jobInfoID, int sleepTime);
+char *GetOwner(char *queueDir, int thisJobID);
+
 
 
 /************************************************************************/
@@ -481,17 +483,16 @@ BOOL RunNextJob(char *queueDir, int verbose)
    Actually runs a job
 
 -  16.10.15  Original   By: ACRM
+-  19.10.15  Now uses GetOwner()
 */
 void RunJob(char *queueDir, int jobID, int verbose)
 {
-   struct stat statBuff;
-   char        jobFile[MAXBUFF];
-   FILE        *fp;
-   char        pwd[MAXBUFF],
-               job[MAXBUFF],
-               exe[MAXBUFF],
-               cmd[MAXBUFF];
-   uid_t       uid;
+   char jobFile[MAXBUFF],
+        pwd[MAXBUFF],
+        job[MAXBUFF],
+        exe[MAXBUFF],
+        cmd[MAXBUFF];
+   FILE *fp;
    
 
    sprintf(jobFile, "%s/%d", queueDir, jobID);
@@ -505,16 +506,10 @@ void RunJob(char *queueDir, int jobID, int verbose)
 
    if((fp=fopen(jobFile, "r"))!=NULL)
    {
-      char          *username;
-      struct passwd *pwdBuff;
+      char *username;
       
-      /* Find the ownder of the job file                                */
-      stat(jobFile, &statBuff);
-      uid = statBuff.st_uid;
-
-      /* Get the username from the UID                                  */
-      pwdBuff  = getpwuid(uid);
-      username = pwdBuff->pw_name;
+      /* Find the owner of the job file                                 */
+      username = GetOwner(queueDir, jobID);
       
       /* Get the working directory for running the job                  */
       if(!fgets(pwd, MAXBUFF, fp))
@@ -829,6 +824,13 @@ void ListJobs(char *queueDir, int verbose)
          /* Check it's a number                                         */
          if(sscanf(dirp->d_name, "%d", &thisJobID))
          {
+            if(verbose)
+            {
+               char *username;
+               username = GetOwner(queueDir, thisJobID);
+               printf("JobID: %d Owner: %s\n", thisJobID, username);
+            }
+            
             nJobs++;
          }
       }
@@ -979,5 +981,37 @@ directory.\n");
    fprintf(stderr,"\n");
 
    exit(0);
+}
+
+
+/************************************************************************/
+/*>char *GetOwner(char *queueDir, int thisJobID)
+   ---------------------------------------------
+*//**
+   \param[in]   queueDir    Queue directory
+   \param[in]   thisJobID   Job identifier
+   \return                  Pointer to username
+
+   Gets the owner of a specified job
+
+-  19.10.15  Original   By: ACRM
+*/
+char *GetOwner(char *queueDir, int thisJobID)
+{
+   struct stat   statBuff;
+   struct passwd *pwdBuff;
+   char          jobFile[MAXBUFF];
+   uid_t         uid;
+   
+
+   sprintf(jobFile,"%s/%d", queueDir, thisJobID);
+
+   /* Find the ownder of the job file                                   */
+   stat(jobFile, &statBuff);
+   uid = statBuff.st_uid;
+
+   /* Get the username from the UID                                     */
+   pwdBuff  = getpwuid(uid);
+   return(pwdBuff->pw_name);
 }
 
