@@ -1,7 +1,7 @@
 simq V1.0
 =========
 
--- (c) 2015 UCL, Dr. Andrew C.R. Martin
+(c) 2015 UCL, Dr. Andrew C.R. Martin
 
 simq is a very simple program batch queueing system written to meet
 the needs ot a web site that has long running high-memory programs
