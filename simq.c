@@ -5,7 +5,7 @@
    \file       simq.c
    
    \version    V1.0 
-   \date       16.10.15   
+   \date       19.10.15   
    \brief      A very simple batch queuing program
    
    \copyright  (c) UCL / Dr. Andrew C. R. Martin 2015
@@ -112,12 +112,12 @@ typedef short BOOL;
 */
 BOOL ParseCmdLine(int argc, char **argv, BOOL *runDaemon, int *progArg, 
                   int *sleepTime, int *verbose, char *queueDir,
-                  int *maxWait, BOOL *listJobs);
+                  int *maxWait, BOOL *listJobs, int *jobInfoID);
 int main(int argc, char **argv);
 void MakeDirectory(char *dirname);
 void UsageDie(void);
 int QueueJob(char *queueDir, char *lockFullFile, char **progArgs, 
-             int nProgArgs, int maxWait);
+             int nProgArgs, int maxWait, int *nJobsWaiting);
 void SpawnJobRunner(char *queueDir, int sleepTime, int verbose);
 BOOL RunNextJob(char *queueDir, int verbose);
 void RunJob(char *queueDir, int jobID, int verbose);
@@ -130,6 +130,7 @@ BOOL FileExists(char *filename);
 BOOL IsRootUser(uid_t *uid, gid_t *gid);
 void Message(char *progname, int level, char *message);
 void ListJobs(char *queueDir, int verbose);
+void CountdownJob(char *queueDir, int jobInfoID, int sleepTime);
 
 
 /************************************************************************/
@@ -146,6 +147,7 @@ int main(int argc, char **argv)
          listJobs  = FALSE;
    int   progArg   = (-1),
          verbose   = 0,
+         jobInfoID = 0,
          sleepTime = DEF_POLLTIME,
          maxWait   = DEF_WAITTIME;
    char  queueDir[MAXBUFF];
@@ -153,7 +155,8 @@ int main(int argc, char **argv)
    gid_t gid;
     
    if(ParseCmdLine(argc, argv, &runDaemon, &progArg, &sleepTime, 
-                   &verbose, queueDir, &maxWait, &listJobs))
+                   &verbose, queueDir, &maxWait, &listJobs,
+                   &jobInfoID))
    {
       char lockFullFile[MAXBUFF];
       
@@ -174,20 +177,29 @@ int main(int argc, char **argv)
       {
          ListJobs(queueDir, verbose);
       }
+      else if(jobInfoID)
+      {
+         CountdownJob(queueDir, jobInfoID, sleepTime);
+      }
       else
       {
-         int nJobs;
+         int  nJobs,
+              jobID;
+         char msg[MAXBUFF];
+         
          if(IsRootUser(&uid, &gid))
          {
             Message(PROGNAME, MSG_FATAL,
                     "Jobs may not be submitted by root");
          }
          
-         nJobs = QueueJob(queueDir, lockFullFile, argv+progArg, 
-                          argc-progArg, maxWait);
+         jobID = QueueJob(queueDir, lockFullFile, argv+progArg, 
+                          argc-progArg, maxWait, &nJobs);
+         sprintf(msg, "Submitted job id: %d", jobID);
+         Message(PROGNAME, MSG_INFO, msg);
+
          if(verbose)
          {
-            char msg[MAXBUFF];
             sprintf(msg, "There are now %d jobs in the queue", nJobs);
             Message(PROGNAME, MSG_INFO, msg);
          }
@@ -203,7 +215,7 @@ int main(int argc, char **argv)
 /************************************************************************/
 /*>BOOL ParseCmdLine(int argc, char **argv, BOOL *runDaemon, int *progArg,
                      int *sleepTime, int *verbose, char *queueDir, 
-                     int *maxWait, BOOL *listJobs)
+                     int *maxWait, BOOL *listJobs, int *jobInfoID)
    -----------------------------------------------------------------
 *//**
    \param[in]  argc          Argument count
@@ -214,16 +226,18 @@ int main(int argc, char **argv)
    \param[out] *verbose      verbose information
    \param[out] *queueDir     the queue directory
    \param[out] *maxWait      maximum time to wait when submitting job
-   \param[out] *listJobs     List the waiting jobs
+   \param[out] *listJobs     -l List the waiting jobs
+   \param[out] *jobInfoID    -i ID of job to monitor
    \returns                  OK
 
    Parses the command line
 
 -  16.10.15  Original   By: ACRM
+-  19.10.15  Added -i
 */
 BOOL ParseCmdLine(int argc, char **argv, BOOL *runDaemon, int *progArg, 
                   int *sleepTime, int *verbose, char *queueDir, 
-                  int *maxWait, BOOL *listJobs)
+                  int *maxWait, BOOL *listJobs, int *jobInfoID)
 {
     argc--;
     argv++;
@@ -242,6 +256,8 @@ BOOL ParseCmdLine(int argc, char **argv, BOOL *runDaemon, int *progArg,
            *runDaemon = TRUE;
            break;
         case 'l':
+           if(*jobInfoID)
+              return(FALSE);
            *listJobs = TRUE;
            break;
         case 'p':
@@ -249,6 +265,15 @@ BOOL ParseCmdLine(int argc, char **argv, BOOL *runDaemon, int *progArg,
            argv++;
            (*progArg)++;
            if(!argc || !sscanf(argv[0], "%d", sleepTime))
+              return(FALSE);
+           break;
+        case 'i':
+           if(*listJobs)
+              return(FALSE);
+           argc--;
+           argv++;
+           (*progArg)++;
+           if(!argc || !sscanf(argv[0], "%d", jobInfoID))
               return(FALSE);
            break;
         case 'w':
@@ -267,7 +292,7 @@ BOOL ParseCmdLine(int argc, char **argv, BOOL *runDaemon, int *progArg,
         (*progArg)++;
     }
     
-    if(*runDaemon || *listJobs)
+    if(*runDaemon || *listJobs || *jobInfoID)
     {
        if(argc != 1)
           return(FALSE);
@@ -323,7 +348,7 @@ void MakeDirectory(char *dirname)
 
 /************************************************************************/
 /*>int QueueJob(char *queueDir, char *lockFullFile, char **progArgs,
-                int nProgArgs, int maxWait)
+                int nProgArgs, int maxWait, int *nJobsWaiting)
    -----------------------------------------------------------------
 *//**
    \param[in]  *queueDir      The queue directory
@@ -331,21 +356,24 @@ void MakeDirectory(char *dirname)
    \param[in]  **progArgs     The program name and arguments
    \param[in]  nProgArgs      The size of the arguments array
    \param[in]  maxWait        Max time to wait to create a job
-   \return                    Number of jobs in the queue
+   \param[out] *nJobsWaiting  Number of jobs in the queue
+   \return                    Job ID for this job
 
    Adds a job to the queue and returns the number of jobs now in the 
    queue.
 
 -  16.10.15  Original   By: ACRM
+-  19.10.15  Now returns jobID and outputs number of jobs
 */
 int QueueJob(char *queueDir, char *lockFullFile, char **progArgs,
-             int nProgArgs, int maxWait)
+             int nProgArgs, int maxWait, int *nJobsWaiting)
 {
    int jobID     = 1,          /* Default JOBID                         */
        waitCount = 0,
        fh,
        nJobs;
-   
+
+   *nJobsWaiting = 0;
    
    /* Wait while the lock file is present                               */
    while(FileExists(lockFullFile))
@@ -374,8 +402,10 @@ int QueueJob(char *queueDir, char *lockFullFile, char **progArgs,
    
    /* Remove the lock file                                              */
    FunlockFile(fh, lockFullFile);
+
+   *nJobsWaiting = nJobs+1;
    
-   return(nJobs+1);
+   return(jobID);
 }
 
 
@@ -765,6 +795,17 @@ void Message(char *progname, int level, char *message)
 }
 
 /************************************************************************/
+/*>void ListJobs(char *queueDir, int verbose)
+   ------------------------------------------
+*//**
+   \param[in]   queueDir   Queue directory
+   \param[in]   verbose    Amount of information to show
+
+   Displays infomation about waiting jobs.
+   Currently just shows the number of jobs
+
+-  16.10.15  Original   By: ACRM
+*/
 void ListJobs(char *queueDir, int verbose)
 {
    struct dirent *dirp;
@@ -800,12 +841,92 @@ void ListJobs(char *queueDir, int verbose)
 
 
 /************************************************************************/
+/*>void CountdownJob(char *queueDir, int jobInfoID, int sleepTime)
+   ---------------------------------------------------------------
+*//**
+   \param[in]   queueDir    Queue directory
+   \param[in]   jobInfoID   Job ID to monitor
+   \param[in]   sleepTime   Time to sleep between polls
+
+   Sits in a loop until the specified job is running and says how many
+   jobs are waiting before yours, updating each time a job runs.
+
+-  19.10.15  Original   By: ACRM
+*/
+void CountdownJob(char *queueDir, int jobInfoID, int sleepTime)
+{
+   struct dirent *dirp;
+   DIR           *dp;
+   int           nJobs        = 0,
+                 prevJobCount = (-1);
+   BOOL          gotJob       = FALSE;
+
+
+   while(TRUE)
+   {
+      nJobs  = 0;
+      gotJob = FALSE;
+      
+      if((dp=opendir(queueDir)) == NULL)
+      {
+         char msg[MAXBUFF];
+         sprintf(msg, "Can't read directory: %s", queueDir);
+         Message(PROGNAME, MSG_FATAL, msg);
+      }
+      
+      while((dirp = readdir(dp)) != NULL)
+      {
+         int thisJobID;
+         
+         /* Ignore files starting with a .                                 */
+         if(dirp->d_name[0] != '.')
+         {
+            /* Check it's a number                                         */
+            if(sscanf(dirp->d_name, "%d", &thisJobID))
+            {
+               if(thisJobID < jobInfoID)
+                  nJobs++;
+               if(thisJobID == jobInfoID)
+                  gotJob = TRUE;
+            }
+         }
+      }
+   
+      closedir(dp);
+
+      if(gotJob)
+      {
+         if(nJobs == 0)
+         {
+            printf("Running your job\n");
+            break;
+         }
+      }
+      else
+      {
+         printf("Job not found (completed?)\n");
+         break;
+      }
+         
+      if(prevJobCount != nJobs)
+      {
+         printf("Jobs before your job: %d\n", nJobs);
+         prevJobCount = nJobs;
+      }
+
+      sleep(sleepTime);
+   }
+}
+
+
+/************************************************************************/
 /*>void UsageDie(void)
    -------------------
 *//**
    Prints a usage message
 
 -  16.10.15  Original   By: ACRM
+-  19.10.15  Added -i
 */
 void UsageDie(void)
 {
@@ -817,11 +938,14 @@ void UsageDie(void)
    fprintf(stderr,"         %s [-v[v...]] [-w maxwait] queuedir program \
 [parameters ...]\n", PROGNAME);
    fprintf(stderr,"         %s -l queuedir\n", PROGNAME);
-   fprintf(stderr,"         -v   Verbose mode (-vv, -vvv more info)\n");
+   fprintf(stderr,"         %s -i jobID queuedir\n", PROGNAME);
+   fprintf(stderr,"\n         -v   Verbose mode (-vv, -vvv more info)\n");
    fprintf(stderr,"         -p   Specify the wait in seconds between \
 polling for jobs [%d]\n",  DEF_POLLTIME);
    fprintf(stderr,"         -w   Specify maximum wait time when trying \
 to submit a job [%d]\n", DEF_WAITTIME);
+   fprintf(stderr,"         -i   Gives a countdown until specified job \
+runs\n");
    fprintf(stderr,"         -l   List number of waiting jobs\n");
    fprintf(stderr,"         -run Run in daemon mode to wait for jobs\n");
    fprintf(stderr,"\n");
