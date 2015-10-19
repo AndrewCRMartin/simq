@@ -4,13 +4,13 @@ simq V1.0
 (c) 2015 UCL, Dr. Andrew C.R. Martin
 
 simq is a very simple program batch queueing system written to meet
-the needs ot a web site that has long running high-memory programs
+the needs of a web site that has long running high-memory programs
 that may be invoked by the user and therefore only one can run at a
 time without slowing the machine to a halt.
 
 It simply places jobs in a queue by placing the command in a file that
-lives in the 'queuedir' directory. The queue manager then pulls jobs
-off one at a time and runs them.
+lives in the `queuedir` directory. The queue manager then pulls jobs
+off one at a time (in the order they were submitted) and runs them.
 
 
 ```
@@ -24,7 +24,7 @@ Usage:   simq [-v[v...]] [-p polltime] -run queuedir
          -run Run in daemon mode to wait for jobs
 ```
 
-Note that 'queuedir' must be a full path name.
+Note that `queuedir` must be a full path name.
 
 Queue manager
 -------------
@@ -36,15 +36,15 @@ the `-run` flag. e.g.
 
 This must be done as root.
 
-The queue directory ('queuedir') will be created if it does not exist,
+The queue directory (`queuedir`) will be created if it does not exist,
 with appropriate permissions to allow anybody to write to the
-directory. Note there is no restriction on who may submit jobs to the
-queue.
+directory and with the sticky bit set to stop other people deleting jobs.
+Note there is no restriction on who may submit jobs to the queue.
 
 Submitting jobs
 ---------------
 
-To submit a job, run simq as, for example:
+To submit a job, run `simq` as, for example:
 
     simq /var/tmp/queue1 myprogram param1 param2 
 
@@ -66,7 +66,7 @@ Installation could not be simpler. Simply type
     make
 
 to compile the program - it requires no libraries or dependencies -
-and place the simq executable somewhere in your path
-(e.g. /usr/local/bin or $(HOME)/bin). There is only one executable
-which acts as both the quete manager and the submission tool.
+and place the `simq` executable somewhere in your path
+(e.g. `/usr/local/bin` or `$(HOME)/bin`). There is only one executable
+which acts as both the queue manager and the submission tool.
 
