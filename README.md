@@ -34,6 +34,8 @@ the `-run` flag. e.g.
 
     nohup nice -10 simq -run /var/tmp/queue1 &
 
+This must be done as root.
+
 The queue directory ('queuedir') will be created if it does not exist,
 with appropriate permissions to allow anybody to write to the
 directory. Note there is no restriction on who may submit jobs to the
@@ -45,6 +47,9 @@ Submitting jobs
 To submit a job, run simq as, for example:
 
     simq /var/tmp/queue1 myprogram param1 param2 
+
+Jobs may not be submitted as root.
+
 
 Getting information
 -------------------
