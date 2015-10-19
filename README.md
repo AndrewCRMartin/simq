@@ -53,3 +53,15 @@ To obtain the number of waiting jobs, do:
 
     simq -l /var/tmp/queue1
 
+Installation
+------------
+
+Installation could not be simpler. Simply type
+
+    make
+
+to compile the program - it requires no libraries or dependencies -
+and place the simq executable somewhere in your path
+(e.g. /usr/local/bin or $(HOME)/bin). There is only one executable
+which acts as both the quete manager and the submission tool.
+
