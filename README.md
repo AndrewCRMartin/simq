@@ -20,6 +20,9 @@ Usage:   simq [-v[v...]] [-p polltime] -run queuedir
          -v   Verbose mode (-vv, -vvv more info)
          -p   Specify the wait in seconds between polling for jobs [10]
          -w   Specify maximum wait time when trying to submit a job [60]
+              A lock file is created when submitting a job - this specifies
+              the maxmimum number of seconds the code should wait for
+              this to clear.
          -l   List number of waiting jobs
          -run Run in daemon mode to wait for jobs
 ```
